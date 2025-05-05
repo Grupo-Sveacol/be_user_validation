@@ -5,6 +5,7 @@ from .views import (
     didit_webhook,
         RetrieveSessionAPIView,
     kyc_test,
+    TusDatosAPIView,
     GetServiceToken,   
     ResolveSessionAPIView,
 )

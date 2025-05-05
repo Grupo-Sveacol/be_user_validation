@@ -15,6 +15,13 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth.models import User
+import requests
+from .utils.tusdatos_client import get_background_check
+from .serializers import SessionDetailsSerializer
+from rest_framework_simplejwt.authentication import JWTAuthentication
+from rest_framework.permissions import IsAuthenticated
+from rest_framework_simplejwt.tokens import RefreshToken
+from django.contrib.auth.models import User
 
 
 
@@ -395,3 +402,43 @@ class ResolveSessionAPIView(APIView):
                     {"error": f"Failed to update session: {str(e)}"},
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR
                 )
+
+
+class TusDatosAPIView(APIView):
+    authentication_classes = []
+    permission_classes     = [AllowAny]
+
+    def get(self, request, document_id: str):
+        session     = get_object_or_404(SessionDetails,
+                                        personal_data__document_id=document_id)
+        didit_data  = retrieve_session(session.session_id)
+
+        full_name       = didit_data.get("kyc", {}).get("full_name")
+        date_of_issue   = didit_data.get("kyc", {}).get("date_of_issue")
+        document_number = didit_data.get("kyc", {}).get("personal_number") or didit_data.get("kyc", {}).get("document_number")
+
+        if not all([full_name, date_of_issue, document_number]):
+            return Response(
+                {"error": "Faltan campos en Didit"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        fechaE = datetime.strptime(date_of_issue, "%Y-%m-%d")\
+                         .strftime("%d/%m/%Y")
+        auth_header = request.headers.get("Authorization")
+
+        tusdatos = get_background_check(
+            document_number=document_number,
+            date_of_issue=fechaE,
+            full_name=full_name,
+            auth_header=auth_header
+        )
+
+        return Response({
+            "input": {
+                "full_name":       full_name,
+                "date_of_issue":   date_of_issue,
+                "document_number": document_number
+            },
+            "tusdatos": tusdatos
+        }, status=status.HTTP_200_OK)

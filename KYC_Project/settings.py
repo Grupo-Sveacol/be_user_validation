@@ -57,6 +57,12 @@ DIDIT_CLIENT_ID = os.getenv('DIDIT_CLIENT_ID')
 DIDIT_CLIENT_SECRET = os.getenv('DIDIT_CLIENT_SECRET')
 DIDIT_WEBHOOK_SECRET = os.getenv('DIDIT_WEBHOOK_SECRET')
 TUNNEL_URL = os.getenv('TUNNEL_URL')  # Usar esta variable en lugar de WEBHOOK_URL
+# TusDatos (pruebas)
+# settings.py
+TUSDATOS_PRUEBAS_USER = os.getenv("TUSDATOS_PRUEBAS_USER", "pruebas")
+TUSDATOS_PRUEBAS_PASS = os.getenv("TUSDATOS_PRUEBAS_PASS", "password")
+TUSDATOS_PRUEBAS_BASE_URL = "https://docs.tusdatos.co"
+
 
 ALLOWED_HOSTS = ['localhost', '127.0.0.1', '0.0.0.0',  '.vercel.app']
 KYC_SECRET = os.getenv("KYC_SECRET")
