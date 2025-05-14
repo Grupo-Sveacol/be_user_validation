@@ -22,10 +22,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth.models import User
-
-
-
-
+from rest_framework.decorators import api_view, permission_classes
 
 from .models import UserDetails, SessionDetails
 from .utils.didit_client import create_session, retrieve_session
@@ -121,10 +118,7 @@ def didit_webhook(request):
     print("✅ Webhook received!")
     print(f"Method: {request.method}")
     print(f"Request: {request}")
-    
 
-       
-    
     # Para solicitudes POST, procesar el JSON como antes
     if request.method == "POST":
         try:
@@ -142,8 +136,6 @@ def didit_webhook(request):
                 
             # Update the status
             session_details.status = didit_status.lower()
-            
-           
             
             # If the status is "completed", get the complete decision
             if didit_status.upper() == "COMPLETED":
@@ -167,7 +159,6 @@ def didit_webhook(request):
             return JsonResponse({"error": str(e)}, status=500)
     else:
         return JsonResponse({"error": "Method not allowed"}, status=405)
-    
 
 class RetrieveSessionAPIView(APIView):
     authentication_classes = [JWTAuthentication]
@@ -195,7 +186,6 @@ class GetServiceToken(APIView):
     permission_classes = [AllowAny]
     def get(self, request):
 
-        
         # Create or get service account
         user, created = User.objects.get_or_create(
             username='service_account',
@@ -210,13 +200,11 @@ class GetServiceToken(APIView):
             'refresh': str(refresh),
         })
     
-  
 class ResolveSessionAPIView(APIView):
     """
     DELETE /kyc/api/session/<session_id>/resolve/
     Resolve a session 
     """
-
 
     def delete(self, request, session_id):
         try:
@@ -249,7 +237,6 @@ class ResolveSessionAPIView(APIView):
                 "error": f"Failed to reject session: {str(e)}"
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
-
     def patch(self, request, session_id):
         try:
             didit_session = retrieve_session(session_id)
@@ -403,42 +390,98 @@ class ResolveSessionAPIView(APIView):
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR
                 )
 
-
 class TusDatosAPIView(APIView):
     authentication_classes = []
-    permission_classes     = [AllowAny]
+    permission_classes = [AllowAny]
 
     def get(self, request, document_id: str):
-        session     = get_object_or_404(SessionDetails,
-                                        personal_data__document_id=document_id)
-        didit_data  = retrieve_session(session.session_id)
+        session = get_object_or_404(SessionDetails, personal_data__document_id=document_id)
+        didit_data = retrieve_session(session.session_id)
+        kyc_data = didit_data.get("kyc") or {}
 
-        full_name       = didit_data.get("kyc", {}).get("full_name")
-        date_of_issue   = didit_data.get("kyc", {}).get("date_of_issue")
-        document_number = didit_data.get("kyc", {}).get("personal_number") or didit_data.get("kyc", {}).get("document_number")
+        if not kyc_data:
+            # 🔁 Mock si el usuario no ha iniciado sesión (kyc es null)
+            mock_failure = {
+            "estado": "Revisión necesaria",
+            "resultados": [
+                {
+                "lista": "Antecedentes judiciales",
+                "estado": "Coincidencia encontrada",
+                "detalle": "Coincidencia parcial con cédula en base de datos judicial. Requiere validación."
+                },
+                {
+                "lista": "Lavado de activos",
+                "estado": "Sin registros"
+                },
+                {
+                "lista": "Interpol",
+                "estado": "Sin registros"
+                }
+            ],
+            "detalle": "El ciudadano presenta coincidencias que requieren revisión manual antes de continuar con el proceso KYC.",
+            "evaluacion_final": "Observado"
+            }
+            return Response({
+                "document_number": document_id,
+                "tusdatos": mock_failure
+            }, status=status.HTTP_200_OK)
+
+        # ✅ Si hay datos en kyc, construimos mock exitoso
+        full_name = kyc_data.get("full_name")
+        date_of_issue = kyc_data.get("date_of_issue")
+        document_number = kyc_data.get("personal_number") or kyc_data.get("document_number")
 
         if not all([full_name, date_of_issue, document_number]):
-            return Response(
-                {"error": "Faltan campos en Didit"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            return Response({"error": "Faltan campos en Didit"}, status=status.HTTP_400_BAD_REQUEST)
 
-        fechaE = datetime.strptime(date_of_issue, "%Y-%m-%d")\
-                         .strftime("%d/%m/%Y")
-        auth_header = request.headers.get("Authorization")
-
-        tusdatos = get_background_check(
-            document_number=document_number,
-            date_of_issue=fechaE,
-            full_name=full_name,
-            auth_header=auth_header
-        )
+        mock_success = {
+            "estado": "Exitoso",
+            "resultados": [
+                {"lista": "Antecedentes judiciales", "estado": "Sin registros"},
+                {"lista": "Lavado de activos", "estado": "Sin registros"}
+            ],
+            "detalle": "El ciudadano no presenta antecedentes."
+        }
 
         return Response({
             "input": {
-                "full_name":       full_name,
-                "date_of_issue":   date_of_issue,
+                "full_name": full_name,
+                "date_of_issue": date_of_issue,
                 "document_number": document_number
             },
-            "tusdatos": tusdatos
+            "tusdatos": mock_success
         }, status=status.HTTP_200_OK)
+
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import AllowAny
+from rest_framework.response import Response
+from rest_framework import status
+from datetime import datetime
+from .models import UserDetails, SessionDetails
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def verificar_tusdatos(request):
+    document_type = request.data.get("document_type")
+    document_number = request.data.get("document_number")
+
+    if not document_type or not document_number:
+        return Response({"error": "Se requieren document_type y document_number"}, status=400)
+
+    user = UserDetails.objects.filter(document_id=document_number).first()
+
+    simulated_response = {
+        "document_type": document_type,
+        "document_number": document_number,
+        "background_check": [
+            {"list_name": "Lista de antecedentes judiciales", "status": "Sin registros"},
+            {"list_name": "Lista de lavado de activos", "status": "Sin registros"}
+        ],
+        "verificado_por": "TusDatos (mock)",
+        "timestamp": datetime.now().isoformat()
+    }
+
+    if user:
+        return Response(simulated_response, status=200)
+
+    return Response({"error": "Usuario no encontrado"}, status=404)

@@ -3,11 +3,12 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from .views import (
     DiditKYCAPIView,
     didit_webhook,
-        RetrieveSessionAPIView,
+    RetrieveSessionAPIView,
     kyc_test,
     TusDatosAPIView,
     GetServiceToken,   
     ResolveSessionAPIView,
+    verificar_tusdatos
 )
 
 app_name = "kyc"
@@ -21,4 +22,5 @@ urlpatterns = [
     path("test/", kyc_test, name="kyc_test"),
     path('api/session/<str:session_id>/resolve/', ResolveSessionAPIView.as_view(), name='reject-session'),
     path('api/tusdatos/<str:document_id>/', TusDatosAPIView.as_view(), name='tus_datos'),
+    path('api/tusdatos/verificar/', verificar_tusdatos, name='verificar_tusdatos'),
 ]
